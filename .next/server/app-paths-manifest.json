@@ -1,0 +1,17 @@
+{
+  "/page": "app/page.js",
+  "/api/gov/auth/login/route": "app/api/gov/auth/login/route.js",
+  "/api/gov/dashboard/summary/route": "app/api/gov/dashboard/summary/route.js",
+  "/api/gov/geographies/route": "app/api/gov/geographies/route.js",
+  "/api/gov/areas/[areaId]/overview/route": "app/api/gov/areas/[areaId]/overview/route.js",
+  "/api/gov/areas/[areaId]/map-layers/route": "app/api/gov/areas/[areaId]/map-layers/route.js",
+  "/api/gov/areas/[areaId]/documents/route": "app/api/gov/areas/[areaId]/documents/route.js",
+  "/gov/page": "app/gov/page.js",
+  "/gov/dashboard/page": "app/gov/dashboard/page.js",
+  "/gov/login/page": "app/gov/login/page.js",
+  "/research/dashboard/page": "app/research/dashboard/page.js",
+  "/research/page": "app/research/page.js",
+  "/public/page": "app/public/page.js",
+  "/gov/areas/select/page": "app/gov/areas/select/page.js",
+  "/gov/areas/[areaId]/overview/page": "app/gov/areas/[areaId]/overview/page.js"
+}

@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- Government / Policy portal --- */
+.font-serif-display {
+  font-family: "Source Serif 4", Georgia, serif;
+}
+
+/* --- Public / Citizen portal (BhumiKosh) semantic color tokens, scoped so
+   they never leak into the Government or Researcher portals which share
+   this same global stylesheet. --- */
+[data-portal="public"] {
+  --background: 0 0% 98%;
+  --foreground: 150 30% 10%;
+  --card: 0 0% 100%;
+  --card-foreground: 150 30% 10%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 150 30% 10%;
+  --primary: 140 45% 28%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 140 30% 94%;
+  --secondary-foreground: 150 30% 20%;
+  --muted: 140 25% 94%;
+  --muted-foreground: 150 10% 45%;
+  --accent: 140 30% 94%;
+  --accent-foreground: 150 30% 15%;
+  --destructive: 0 80% 55%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 150 15% 88%;
+  --input: 150 15% 88%;
+  --ring: 140 45% 35%;
+  --radius: 0.75rem;
+  font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+[data-portal="public"] * {
+  border-color: hsl(var(--border));
+}
+
+[data-portal="public"] .text-balance {
+  text-wrap: balance;
+}
+[data-portal="public"] .no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+[data-portal="public"] .no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* --- Leaflet (Government GIS map + Public Atlas map) --- */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  background: #F7F5F0;
+  font-family: inherit;
+  z-index: 0;
+}
+.leaflet-pane {
+  z-index: 1;
+}
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 2;
+}
+
+/* --- Researcher portal: GIS map (MapLibre) readability boost --- */
+.maplibregl-canvas {
+  filter: saturate(1.08) contrast(1.04);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.4);
+  border-radius: 4px;
+}
