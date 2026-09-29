@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import { getDatabase, uid, nowIso, UPLOAD_DIR, MAX_UPLOAD_SIZE_MB } from "@/lib/gov/db";
+import { getDatabase, uid, nowIso, UPLOAD_DIR, MAX_UPLOAD_SIZE_MB, logWorkspaceActivity } from "@/lib/gov/db";
 import { requirePermission, ApiError } from "@/lib/gov/auth";
 import { getAccessibleWorkspace } from "@/lib/gov/workspace";
 import { serializeWorkspaceItem, errorResponse } from "@/lib/gov/serialize";
@@ -48,6 +48,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
        VALUES (?, ?, 'file', ?, NULL, ?, ?, ?, ?, ?, ?)`
     ).run(id, ws.id, originalName, `${ws.id}/${storedName}`, originalName, buffer.length, file.type || null, user.id, nowIso());
 
+    logWorkspaceActivity(db, ws.id, user.id, "file_uploaded", `Uploaded "${originalName}".`);
     const row = db.prepare("SELECT * FROM workspace_items WHERE id = ?").get(id);
     return NextResponse.json(serializeWorkspaceItem(row));
   } catch (err) {

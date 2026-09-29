@@ -1,4 +1,4 @@
-import { initDb, getDatabase } from "../src/lib/db";
+import { initDb, getDatabase } from "../lib/public/db";
 import { randomUUID } from "crypto";
 
 const db = getDatabase();

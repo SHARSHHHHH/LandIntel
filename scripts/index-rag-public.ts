@@ -1,5 +1,5 @@
-import { indexAllArticles } from "../src/lib/rag/article-store";
-import { getDatabase } from "../src/lib/db";
+import { indexAllArticles } from "../lib/public/rag/article-store";
+import { getDatabase } from "../lib/public/db";
 
 async function main() {
   console.log("[RAG] Starting article indexing...");

@@ -1,4 +1,4 @@
-import { answerQuestion } from "../src/lib/rag/answer";
+import { answerQuestion } from "../lib/public/rag/answer";
 
 async function main() {
   const qs = [

@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { getDatabase, initDb, nowIso } from '../lib/db';
+import { getDatabase, initDb, nowIso } from '../lib/research/db';
 
 function main() {
   console.log('Starting database seeding (SAMPLE / DEMO data)...');

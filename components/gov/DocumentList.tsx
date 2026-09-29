@@ -6,6 +6,25 @@ import type { DocumentOut } from "@/lib/gov/types";
 import { DataStatusBadge } from "./DataStatusBadge";
 import { Skeleton } from "./Skeleton";
 
+function DocumentTitleLink({ doc }: { doc: DocumentOut }) {
+  if (doc.uploaded_document_id) {
+    return (
+      <button
+        type="button"
+        onClick={() => api.downloadUploadedFile(doc.uploaded_document_id!, doc.title).catch(() => {})}
+        className="font-medium text-register-navy underline-offset-2 hover:underline"
+      >
+        {doc.title}
+      </button>
+    );
+  }
+  return (
+    <a href={doc.source_url} target="_blank" rel="noreferrer" className="font-medium text-register-navy underline-offset-2 hover:underline">
+      {doc.title}
+    </a>
+  );
+}
+
 export function DocumentList({ areaId, compact = false }: { areaId: string; compact?: boolean }) {
   const [documents, setDocuments] = useState<DocumentOut[]>([]);
   const [query, setQuery] = useState("");
@@ -49,14 +68,7 @@ export function DocumentList({ areaId, compact = false }: { areaId: string; comp
             <li key={doc.id} className="py-3 transition-colors hover:bg-register-bg/60">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <a
-                    href={doc.source_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="font-medium text-register-navy underline-offset-2 hover:underline"
-                  >
-                    {doc.title}
-                  </a>
+                  <DocumentTitleLink doc={doc} />
                   <p className="mt-0.5 text-xs text-register-ink/60">
                     {doc.source_organization}
                     {doc.publication_date ? ` · ${doc.publication_date}` : ""}

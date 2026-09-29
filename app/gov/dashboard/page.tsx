@@ -34,12 +34,45 @@ function DashboardInner() {
 
   return (
     <DashboardShell>
-      <div className="mb-6">
-        <h2 className="font-serif-display text-2xl font-semibold text-register-navy">Dashboard</h2>
-        <p className="mt-1 text-sm text-register-ink/60">
-          Your overview of this workspace -- areas you've opened, saved searches, reports, and
-          shared workspaces. Every figure below is a real record tied to your account.
-        </p>
+      <div className="mb-6 overflow-hidden rounded-md border border-register-line bg-register-panelAlt shadow-card">
+        <div className="px-6 py-6">
+          <p className="text-xs uppercase tracking-wide text-register-ink/50">Department of Land Resources</p>
+          <h2 className="mt-1 font-serif-display text-2xl font-semibold text-register-navy">Dashboard</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-register-ink/70">
+            Your overview of this workspace — areas you&apos;ve opened, saved searches, reports and shared
+            workspaces. Every figure below is a real record tied to your account, not a placeholder.
+          </p>
+        </div>
+      </div>
+
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Link
+          href="/gov/areas/select"
+          className="group flex flex-col rounded-md border border-register-line bg-register-panel p-5 shadow-card transition-shadow hover:shadow-raised"
+        >
+          <p className="font-medium text-register-navy">
+            Area Intelligence <span className="text-register-ochre transition-transform group-hover:translate-x-0.5">→</span>
+          </p>
+          <p className="mt-1 text-xs text-register-ink/60">Open a district&apos;s full demographic, land and evidence profile.</p>
+        </Link>
+        <Link
+          href="/gov/policy-analytics"
+          className="group flex flex-col rounded-md border border-register-line bg-register-panel p-5 shadow-card transition-shadow hover:shadow-raised"
+        >
+          <p className="font-medium text-register-navy">
+            Policy Analytics <span className="text-register-ochre transition-transform group-hover:translate-x-0.5">→</span>
+          </p>
+          <p className="mt-1 text-xs text-register-ink/60">Cross-district comparisons and indicator trends.</p>
+        </Link>
+        <Link
+          href="/gov/scenario"
+          className="group flex flex-col rounded-md border border-register-line bg-register-panel p-5 shadow-card transition-shadow hover:shadow-raised"
+        >
+          <p className="font-medium text-register-navy">
+            Scenario &amp; Decision Support <span className="text-register-ochre transition-transform group-hover:translate-x-0.5">→</span>
+          </p>
+          <p className="mt-1 text-xs text-register-ink/60">Model land-use change and ask scenario questions.</p>
+        </Link>
       </div>
 
       {loading ? (
@@ -136,7 +169,7 @@ function DashboardInner() {
                     <Link href={`/gov/reports/${r.id}`} className="text-register-navy hover:underline">
                       {r.title}
                     </Link>
-                    <span className="ml-2 text-xs uppercase tracking-wide text-register-ink/40">{r.status}</span>
+                    <span className="ml-2 text-xs uppercase tracking-wide text-register-ink/40">{r.status.replace("_", " ")}</span>
                   </li>
                 ))}
               </ul>

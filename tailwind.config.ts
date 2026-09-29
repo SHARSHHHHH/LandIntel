@@ -50,18 +50,28 @@ const config: Config = {
           dark: "hsl(140 55% 18%)",
         },
         // --- Government/Policy portal "register" palette ---
+        // Warmed and deepened from the original flat navy/ochre-on-white
+        // pass: a warmer parchment page, an off-white (not pure white) card
+        // surface, a warm taupe line instead of a cool grey one, and two
+        // tint washes (navyTint / ochreTint) for highlighted panels like the
+        // area summary header -- meant to read like an actual government
+        // register/gazette page rather than a generic dashboard template.
         register: {
-          bg: "#F7F5F0",
-          panel: "#FFFFFF",
-          ink: "#1C2430",
-          navy: "#1B2A4A",
-          navy2: "#283B63",
-          ochre: "#B8862B",
-          line: "#DCD6C8",
+          bg: "#F5EFE3",
+          panel: "#FFFDF8",
+          panelAlt: "#FBF3E3",
+          ink: "#231F1A",
+          navy: "#152238",
+          navy2: "#22345A",
+          navyTint: "#EAEEF3",
+          ochre: "#A8752A",
+          ochreTint: "#F3E6C9",
+          line: "#E1D3B4",
+          lineStrong: "#CBB98F",
           official: "#1F7A4C",
-          sample: "#B8862B",
+          sample: "#A8752A",
           derived: "#2E5F8A",
-          historical: "#6B6458",
+          historical: "#6B5D45",
         },
       },
       borderRadius: {
@@ -74,8 +84,8 @@ const config: Config = {
         serif: ["\"Source Serif 4\"", "Georgia", "serif"],
       },
       boxShadow: {
-        card: "0 1px 2px rgba(28, 36, 48, 0.04), 0 1px 1px rgba(28, 36, 48, 0.03)",
-        raised: "0 4px 16px rgba(27, 42, 74, 0.10), 0 1px 2px rgba(27, 42, 74, 0.06)",
+        card: "0 1px 2px rgba(64, 45, 15, 0.05), 0 1px 1px rgba(64, 45, 15, 0.04)",
+        raised: "0 8px 20px rgba(21, 34, 56, 0.10), 0 2px 4px rgba(21, 34, 56, 0.07)",
       },
       keyframes: {
         "fade-up": {

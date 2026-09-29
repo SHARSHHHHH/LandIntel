@@ -9,6 +9,22 @@ import { DashboardShell } from "@/components/gov/DashboardShell";
 import { Skeleton } from "@/components/gov/Skeleton";
 import { RequireAuth } from "@/components/gov/RequireAuth";
 
+const STATUS_STYLE: Record<string, string> = {
+  draft: "border-register-lineStrong text-register-ink/60 bg-register-bg",
+  final: "border-register-official/40 text-register-official bg-register-official/[0.07]",
+  pending_review: "border-register-sample/40 text-register-sample bg-register-sample/[0.08]",
+  approved: "border-register-official/40 text-register-official bg-register-official/[0.07]",
+  rejected: "border-red-300 text-red-700 bg-red-50",
+};
+
+function StatusPill({ status }: { status: string }) {
+  return (
+    <span className={`inline-flex rounded-sm border px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide ${STATUS_STYLE[status] ?? STATUS_STYLE.draft}`}>
+      {status.replace("_", " ")}
+    </span>
+  );
+}
+
 function Inner() {
   const [reports, setReports] = useState<ReportOut[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,8 +57,10 @@ function Inner() {
     <DashboardShell>
       <h2 className="mb-1 font-serif-display text-2xl font-semibold text-register-navy">Reports &amp; Insights</h2>
       <p className="mb-6 max-w-2xl text-sm text-register-ink/60">
-        Build a report by adding sections that reference real documents and indicators. Reports
-        stay in draft until you explicitly finalize them.
+        Build a report by adding sections that reference real documents and indicators, or upload a
+        document from an Area Intelligence page to get a draft automatically. Reports created from an
+        upload arrive here <strong>Pending review</strong> — approve one to publish it to Evidence &amp;
+        Research, or reject it with a reason.
       </p>
 
       <form
@@ -82,8 +100,10 @@ function Inner() {
                 <Link href={`/gov/reports/${r.id}`} className="font-medium text-register-navy hover:underline">
                   {r.title}
                 </Link>
-                <p className="mt-0.5 text-xs uppercase tracking-wide text-register-ink/40">
-                  {r.status} · {r.section_count} section(s)
+                <p className="mt-1 flex items-center gap-2 text-xs text-register-ink/50">
+                  <StatusPill status={r.status} />
+                  <span>{r.section_count} section(s)</span>
+                  {r.source_document_id && <span>· from an uploaded document</span>}
                 </p>
               </div>
             </li>

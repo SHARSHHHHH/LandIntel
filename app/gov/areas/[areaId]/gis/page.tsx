@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { api } from "@/lib/gov/client";
 import { useAreaContext } from "@/components/gov/area-context";
 import type { GeographicUnitOut } from "@/lib/gov/types";
@@ -19,6 +19,8 @@ const MapView = dynamic(() => import("@/components/gov/MapView"), {
 function GISInner() {
   const params = useParams<{ areaId: string }>();
   const areaId = params.areaId;
+  const searchParams = useSearchParams();
+  const initialParcelId = searchParams.get("parcelId");
   const [area, setArea] = useState<GeographicUnitOut | null>(null);
   const { setSelectedArea } = useAreaContext();
 
@@ -53,11 +55,11 @@ function GISInner() {
         GIS &amp; Land Insights — {area.name}
       </h2>
       <p className="mb-6 max-w-2xl text-sm text-register-ink/60">
-        Reuses the geographic scope selected in the Area Overview. Toggle layers, switch
-        basemaps, and locate your own device live — full GIS capability is being built out
-        incrementally, so only layers registered for this area are shown.
+        Reuses the geographic scope selected in the Area Overview, then drills down
+        State &rarr; District &rarr; Tehsil/Taluk &rarr; Village &rarr; Land Parcel. Search records, toggle GIS
+        layers, measure distance/area, and locate your own device live.
       </p>
-      <MapView area={area} />
+      <MapView area={area} initialParcelId={initialParcelId} />
     </DashboardShell>
   );
 }

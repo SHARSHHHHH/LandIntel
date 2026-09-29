@@ -18,6 +18,12 @@ function Inner() {
   const [content, setContent] = useState("");
   const [saving, setSaving] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [showRejectForm, setShowRejectForm] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [evidenceDocId, setEvidenceDocId] = useState<string | null>(null);
 
   function refresh() {
     if (!reportId) return Promise.resolve();
@@ -60,6 +66,38 @@ function Inner() {
     }
   }
 
+  async function handleApprove() {
+    if (!reportId) return;
+    setApproving(true);
+    setActionError(null);
+    try {
+      const result = await api.approveReport(reportId);
+      setEvidenceDocId(result.evidence_document_id);
+      await refresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not approve this report.");
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  async function handleReject(e: React.FormEvent) {
+    e.preventDefault();
+    if (!reportId) return;
+    setRejecting(true);
+    setActionError(null);
+    try {
+      await api.rejectReport(reportId, rejectReason.trim() || "No reason given.");
+      setShowRejectForm(false);
+      setRejectReason("");
+      await refresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not reject this report.");
+    } finally {
+      setRejecting(false);
+    }
+  }
+
   if (loading) {
     return (
       <DashboardShell>
@@ -80,6 +118,14 @@ function Inner() {
   }
 
   const isDraft = report.status === "draft";
+  const isPendingReview = report.status === "pending_review";
+  const STATUS_STYLE: Record<string, string> = {
+    draft: "border-register-lineStrong text-register-ink/60",
+    final: "border-register-official/40 text-register-official",
+    pending_review: "border-register-sample/40 text-register-sample",
+    approved: "border-register-official/40 text-register-official",
+    rejected: "border-red-300 text-red-700",
+  };
 
   return (
     <DashboardShell>
@@ -91,10 +137,10 @@ function Inner() {
         <div className="flex items-center gap-3">
           <span
             className={`rounded-sm border px-2 py-0.5 text-xs font-medium uppercase tracking-wide ${
-              isDraft ? "border-register-sample/40 text-register-sample" : "border-register-official/40 text-register-official"
+              STATUS_STYLE[report.status] ?? STATUS_STYLE.draft
             }`}
           >
-            {report.status}
+            {report.status.replace("_", " ")}
           </span>
           {isDraft && (
             <button
@@ -106,8 +152,76 @@ function Inner() {
               {finalizing ? "Finalizing…" : "Finalize report"}
             </button>
           )}
+          {isPendingReview && (
+            <>
+              <button
+                onClick={handleApprove}
+                disabled={approving || rejecting}
+                className="rounded-sm bg-register-official px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-register-official/85 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {approving ? "Approving…" : "Approve → Evidence & Research"}
+              </button>
+              <button
+                onClick={() => setShowRejectForm((s) => !s)}
+                disabled={approving || rejecting}
+                className="rounded-sm border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Reject
+              </button>
+            </>
+          )}
         </div>
       </div>
+
+      {isPendingReview && (
+        <div className="mb-6 rounded-sm border border-register-sample/40 bg-register-sample/[0.06] px-4 py-3 text-sm text-register-ink/80">
+          This report was generated automatically from an uploaded document (see “Extraction details” below). It has not
+          been reviewed by a person yet — approve it to publish it to Evidence &amp; Research, or reject it with a reason.
+        </div>
+      )}
+
+      {report.status === "rejected" && report.rejection_reason && (
+        <div className="mb-6 rounded-sm border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span className="font-medium">Rejected: </span>
+          {report.rejection_reason}
+        </div>
+      )}
+
+      {evidenceDocId && (
+        <div className="mb-6 rounded-sm border border-register-official/40 bg-register-official/[0.06] px-4 py-3 text-sm text-register-ink/80">
+          Approved. This report is now an evidence item on{" "}
+          <Link href="/gov/documents" className="font-medium text-register-official underline">
+            Evidence &amp; Research
+          </Link>
+          .
+        </div>
+      )}
+
+      {actionError && (
+        <div className="mb-6 rounded-sm border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</div>
+      )}
+
+      {showRejectForm && isPendingReview && (
+        <form onSubmit={handleReject} className="mb-6 space-y-3 rounded-sm border border-red-200 bg-red-50/50 p-5">
+          <label className="block text-sm">
+            <span className="mb-1.5 block font-medium text-register-ink/80">Reason for rejection</span>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={2}
+              placeholder="e.g. Not relevant to this district, duplicate of an existing document…"
+              className="w-full rounded-sm border border-register-line bg-white px-3 py-2.5 text-sm focus:border-register-navy focus:outline-none focus:ring-2 focus:ring-register-navy/15"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={rejecting}
+            className="rounded-sm bg-red-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {rejecting ? "Rejecting…" : "Confirm rejection"}
+          </button>
+        </form>
+      )}
 
       {isDraft && (
         <form
@@ -157,7 +271,7 @@ function Inner() {
                   </button>
                 )}
               </div>
-              {s.content && <p className="mt-2 text-sm text-register-ink/80">{s.content}</p>}
+              {s.content && <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-register-ink/80">{s.content}</p>}
               <p className="mt-2 text-xs uppercase tracking-wide text-register-ink/40">{s.section_type}</p>
             </li>
           ))}

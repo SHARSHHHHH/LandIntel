@@ -10,17 +10,17 @@ function formatValue(v: IndicatorValueOut): string {
   return v.value.toLocaleString("en-IN");
 }
 
-export function IndicatorCard({ indicator }: { indicator: IndicatorValueOut }) {
+export function IndicatorCard({ indicator, compare }: { indicator: IndicatorValueOut; compare?: string | null }) {
   const [expanded, setExpanded] = useState(false);
   const ds = indicator.dataset;
 
   return (
-    <div className="rounded-sm border border-register-line bg-register-panel p-4 shadow-card transition-shadow hover:shadow-raised">
+    <div className="flex h-full flex-col rounded-md border border-register-line bg-register-panel p-5 shadow-card transition-shadow hover:shadow-raised">
       <div className="flex items-start justify-between gap-3">
-        <p className="text-sm text-register-ink/70">{indicator.indicator_name}</p>
-        <DataStatusBadge status={ds.data_status} />
+        <p className="text-sm leading-snug text-register-ink/70">{indicator.indicator_name}</p>
+        <DataStatusBadge status={ds.data_status} className="shrink-0" />
       </div>
-      <p className="mt-2 font-serif-display text-2xl font-semibold text-register-navy">
+      <p className="mt-2.5 font-serif-display text-[26px] font-semibold leading-tight text-register-navy">
         {formatValue(indicator)}
         {indicator.unit && (
           <span className="ml-1.5 font-sans text-sm font-normal text-register-ink/50">
@@ -28,13 +28,16 @@ export function IndicatorCard({ indicator }: { indicator: IndicatorValueOut }) {
           </span>
         )}
       </p>
+      {compare && <p className="mt-1.5 text-xs text-register-ink/55">{compare}</p>}
 
-      <button
-        onClick={() => setExpanded((e) => !e)}
-        className="mt-3 text-xs font-medium text-register-navy underline decoration-register-line underline-offset-2 hover:decoration-register-navy"
-      >
-        {expanded ? "Hide source" : "Source & date"}
-      </button>
+      <div className="mt-auto pt-3">
+        <button
+          onClick={() => setExpanded((e) => !e)}
+          className="text-xs font-medium text-register-navy underline decoration-register-line underline-offset-2 hover:decoration-register-navy"
+        >
+          {expanded ? "Hide source" : "Source & date"}
+        </button>
+      </div>
 
       {expanded && (
         <dl className="mt-3 space-y-1.5 border-t border-register-line pt-3 text-xs text-register-ink/70">

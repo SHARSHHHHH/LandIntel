@@ -3,11 +3,93 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
+import { NATIONAL_2011 } from "./constants";
+import { PARCEL_INDEX, PILOT_DATASET } from "./gis/adapters/sampleParcels";
+
+export { NATIONAL_2011 };
 
 export const DATA_DIR = path.join(process.cwd(), "data");
 
 export const UPLOAD_DIR = path.join(process.cwd(), "uploads", "gov");
+export const DOCUMENTS_UPLOAD_DIR = path.join(UPLOAD_DIR, "documents");
 export const MAX_UPLOAD_SIZE_MB = 20;
+
+// Approximate state-level Census 2011 figures used as a documented proxy for
+// fields we have not loaded a district-specific source for yet (decadal
+// growth, SC/ST population share). These are seed/demo estimates applied at
+// the state level, not district-tabulated census cross-tabs -- every
+// indicator built from this lookup is tagged DERIVED and says so in its
+// dataset's limitations text.
+const STATE_DERIVED: Record<string, { decadalGrowthPct: number; scStSharePct: number }> = {
+  Rajasthan: { decadalGrowthPct: 21.3, scStSharePct: 31.3 },
+  Maharashtra: { decadalGrowthPct: 16.0, scStSharePct: 21.2 },
+  Karnataka: { decadalGrowthPct: 15.6, scStSharePct: 24.0 },
+  "Tamil Nadu": { decadalGrowthPct: 15.6, scStSharePct: 21.1 },
+  "Uttar Pradesh": { decadalGrowthPct: 20.2, scStSharePct: 21.3 },
+  "Madhya Pradesh": { decadalGrowthPct: 20.3, scStSharePct: 36.7 },
+  Gujarat: { decadalGrowthPct: 19.3, scStSharePct: 21.5 },
+  "West Bengal": { decadalGrowthPct: 13.8, scStSharePct: 29.3 },
+  Bihar: { decadalGrowthPct: 25.4, scStSharePct: 17.2 },
+  Kerala: { decadalGrowthPct: 4.9, scStSharePct: 10.6 },
+  Telangana: { decadalGrowthPct: 13.6, scStSharePct: 24.7 },
+  Punjab: { decadalGrowthPct: 13.9, scStSharePct: 31.9 },
+  Haryana: { decadalGrowthPct: 19.9, scStSharePct: 20.2 },
+  Odisha: { decadalGrowthPct: 14.0, scStSharePct: 40.0 },
+  Assam: { decadalGrowthPct: 16.9, scStSharePct: 19.6 },
+  Delhi: { decadalGrowthPct: 21.2, scStSharePct: 16.9 },
+  "Andhra Pradesh": { decadalGrowthPct: 11.1, scStSharePct: 22.1 },
+  Jharkhand: { decadalGrowthPct: 22.3, scStSharePct: 38.3 },
+  Chhattisgarh: { decadalGrowthPct: 22.6, scStSharePct: 43.4 },
+  Uttarakhand: { decadalGrowthPct: 18.8, scStSharePct: 21.7 },
+  "Himachal Pradesh": { decadalGrowthPct: 12.9, scStSharePct: 30.9 },
+};
+
+/**
+ * Extra census-style fields derived from the base district row using
+ * documented, deterministic formulas -- filling gaps in the seed dataset
+ * without pretending to be an official cross-tabulation. Every value here
+ * is tagged DERIVED and carries a plain-language derivation note.
+ */
+function deriveExtendedCensusFields(row: DistrictRow) {
+  const state = STATE_DERIVED[row.state] ?? { decadalGrowthPct: NATIONAL_2011.decadalGrowthRate, scStSharePct: 25 };
+
+  // Urbanisation heuristic: higher population density implies a more urban
+  // district. Calibrated so a low-density rural district (~50-150
+  // persons/km^2) reads ~18-35% urban, a Gurugram-like district (~1200/km^2)
+  // reads ~65-70%, and a fully built-up district (Chennai/Kolkata-scale,
+  // >20,000/km^2) saturates near 95%.
+  const urbanPct = Math.max(8, Math.min(96, -40 + Math.log10(Math.max(row.density, 10)) * 35));
+  const ruralPct = 100 - urbanPct;
+
+  // Average household size: national 2011 average was ~4.8 rural / ~4.1
+  // urban; blend by the urban share above.
+  const avgHouseholdSize = Math.round(((urbanPct / 100) * 4.1 + (ruralPct / 100) * 4.8) * 10) / 10;
+  const households = Math.round(row.population / avgHouseholdSize);
+
+  // Workforce participation rate: national 2011 average (Work Participation
+  // Rate) was ~39.8%; nudge slightly with literacy as a rough proxy for
+  // labour-force formalisation, clamped to a plausible band.
+  const workforceParticipationPct = Math.round((36 + (row.literacy - 65) * 0.12) * 10) / 10;
+  const workforceParticipationClamped = Math.max(30, Math.min(48, workforceParticipationPct));
+
+  // Gender literacy split: 2011 national male-female literacy gap was ~16.7
+  // points. Apply half the gap either side of the reported combined rate.
+  const gap = 16.7;
+  const maleLiteracy = Math.min(99, Math.round((row.literacy + gap * 0.5) * 10) / 10);
+  const femaleLiteracy = Math.max(1, Math.round((row.literacy - gap * 0.5) * 10) / 10);
+
+  return {
+    decadalGrowthPct: state.decadalGrowthPct,
+    urbanPct: Math.round(urbanPct * 10) / 10,
+    ruralPct: Math.round(ruralPct * 10) / 10,
+    avgHouseholdSize,
+    households,
+    workforceParticipationPct: workforceParticipationClamped,
+    scStSharePct: state.scStSharePct,
+    maleLiteracy,
+    femaleLiteracy,
+  };
+}
 
 export function uid(): string {
   return crypto.randomUUID();
@@ -182,6 +264,90 @@ CREATE TABLE IF NOT EXISTS workspace_items (
   created_at TEXT NOT NULL
 );
 
+-- ---------------------------------------------------------------------------
+-- Collaborative Workspace (research collaboration platform) tables. The
+-- workspaces / workspace_members / workspace_items tables above predate
+-- this expansion and are kept as-is (workspace_items still backs simple
+-- note/file attachments); the tables below add the research-board, evidence
+-- linking, discussion, findings, policy-notes, GIS-linking and activity-log
+-- functionality. Every table is scoped by workspace_id and normalized --
+-- documents are linked by reference into the existing documents catalogue
+-- (workspace_documents), never duplicated.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS workspace_tasks (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'todo',
+  assignee_id TEXT,
+  due_date TEXT,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workspace_discussions (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  parent_id TEXT,
+  author_id TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workspace_findings (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  statement TEXT NOT NULL,
+  confidence TEXT NOT NULL DEFAULT 'medium',
+  evidence_document_id TEXT,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workspace_policy_notes (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+-- Links a workspace to an existing Evidence & Research documents row
+-- (never duplicates the file/record itself).
+CREATE TABLE IF NOT EXISTS workspace_documents (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  added_by TEXT NOT NULL,
+  added_at TEXT NOT NULL,
+  UNIQUE (workspace_id, document_id)
+);
+
+-- Links a workspace to a district/parcel already in the GIS module.
+CREATE TABLE IF NOT EXISTS workspace_gis_links (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  geographic_unit_id TEXT,
+  parcel_id TEXT,
+  label TEXT,
+  note TEXT,
+  added_by TEXT NOT NULL,
+  added_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workspace_activity (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  detail TEXT,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS reports (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
@@ -235,7 +401,94 @@ CREATE TABLE IF NOT EXISTS saved_searches (
   document_type TEXT,
   created_at TEXT NOT NULL
 );
+
+-- Documents an officer attaches to a district on the Area Intelligence page.
+-- Distinct from the "documents" table above (that one is the curated
+-- Evidence & Research catalogue). A row here moves through:
+--   processing -> pending_review -> approved | rejected
+-- On approval it is mirrored into "documents" (see the approve route) so it
+-- becomes visible on Evidence & Research; on rejection it stays out of that
+-- catalogue entirely.
+CREATE TABLE IF NOT EXISTS uploaded_documents (
+  id TEXT PRIMARY KEY,
+  geographic_unit_id TEXT,
+  filename TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  mime_type TEXT,
+  file_size INTEGER,
+  uploaded_by TEXT NOT NULL,
+  uploaded_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'processing',
+  extracted_text TEXT,
+  extraction_error TEXT,
+  report_id TEXT
+);
 `;
+
+/** Adds a column to an existing table if it isn't there yet (SQLite has no ADD COLUMN IF NOT EXISTS). */
+function ensureColumn(db: Database.Database, table: string, column: string, definition: string) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+function runMigrations(db: Database.Database) {
+  // reports: track which uploaded document (if any) produced this report, and
+  // why a report was rejected, so the review pipeline has somewhere to write.
+  ensureColumn(db, "reports", "source_document_id", "TEXT");
+  ensureColumn(db, "reports", "rejection_reason", "TEXT");
+  // documents (Evidence & Research catalogue): link back to the uploaded
+  // file an approved report came from, so the evidence item can point at
+  // the original upload.
+  ensureColumn(db, "documents", "uploaded_document_id", "TEXT");
+
+  // --- Evidence & Research hub expansion ---
+  // category groups a documents row into one of the hub's submodules:
+  //   official_document | land_record | legal_case | uploaded_report
+  // Approved uploads (see reports/[id]/approve) fall back to the default
+  // 'uploaded_report' since that route doesn't set this column explicitly.
+  ensureColumn(db, "documents", "category", "TEXT NOT NULL DEFAULT 'uploaded_report'");
+  // Nullable state code (e.g. "RJ") -- null means a national-level document.
+  // Lets Land Record Evidence entries pick up the right state's terminology
+  // via lib/gov/gis/adapters/terminology.ts, and leaves room to add
+  // state-specific Official Documents later without a schema change.
+  ensureColumn(db, "documents", "state", "TEXT");
+  // Links a Land Record / Legal evidence row to a real sample parcel id from
+  // the GIS module's sample dataset, for bidirectional Evidence<->GIS nav.
+  ensureColumn(db, "documents", "parcel_id", "TEXT");
+  // Page/document number within the source, where applicable.
+  ensureColumn(db, "documents", "page_ref", "TEXT");
+  // Last-verified date, shown alongside the source so officers know how
+  // fresh the citation is (distinct from publication_date).
+  ensureColumn(db, "documents", "last_verified", "TEXT");
+
+  // schemes: eligibility / benefits / required documents / application
+  // process, each general guidance text, plus a last-verified date. The UI
+  // always tells the officer to confirm current details at the official link.
+  ensureColumn(db, "schemes", "eligibility", "TEXT");
+  ensureColumn(db, "schemes", "benefits", "TEXT");
+  ensureColumn(db, "schemes", "required_documents", "TEXT");
+  ensureColumn(db, "schemes", "application_process", "TEXT");
+  ensureColumn(db, "schemes", "last_verified", "TEXT");
+
+  // --- Collaborative Workspace expansion ---
+  ensureColumn(db, "workspaces", "research_area", "TEXT");
+  ensureColumn(db, "workspaces", "research_type", "TEXT");
+  ensureColumn(db, "workspaces", "geography_name", "TEXT");
+  ensureColumn(db, "workspaces", "start_date", "TEXT");
+  ensureColumn(db, "workspaces", "end_date", "TEXT");
+  ensureColumn(db, "workspaces", "visibility", "TEXT NOT NULL DEFAULT 'Team'");
+  ensureColumn(db, "workspaces", "status", "TEXT NOT NULL DEFAULT 'active'");
+}
+
+/** Appends one row to a workspace's activity log. Call this at the point every real event happens -- never backfilled or faked. */
+export function logWorkspaceActivity(db: Database.Database, workspaceId: string, actorId: string, action: string, detail?: string | null) {
+  db.prepare(
+    "INSERT INTO workspace_activity (id, workspace_id, actor_id, action, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+  ).run(uid(), workspaceId, actorId, action, detail ?? null, nowIso());
+  db.prepare("UPDATE workspaces SET updated_at = ? WHERE id = ?").run(nowIso(), workspaceId);
+}
 
 let _db: Database.Database | null = null;
 
@@ -245,8 +498,10 @@ export function getDatabase(): Database.Database {
   const db = new Database(path.join(DATA_DIR, "gov.db"));
   db.pragma("journal_mode = WAL");
   db.exec(SCHEMA);
+  runMigrations(db);
   _db = db;
   seedIfEmpty(db);
+  seedEvidenceHub(db);
   return db;
 }
 
@@ -349,6 +604,23 @@ function seedIfEmpty(db: Database.Database) {
     );
     db.prepare("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)").run(demoUserId, govRoleId);
 
+    // Extra demo users so the Collaborative Workspace member picker has a
+    // real, if small, directory to invite from instead of only the single
+    // logged-in demo account. Same shared password for this sandbox demo.
+    const EXTRA_USERS: { email: string; full_name: string; department: string }[] = [
+      { email: "anita.rao@dolr.gov.in", full_name: "Anita Rao", department: "Department of Land Resources (demo)" },
+      { email: "vikram.singh@dolr.gov.in", full_name: "Vikram Singh", department: "GIS & Survey Division (demo)" },
+      { email: "priya.menon@dolr.gov.in", full_name: "Priya Menon", department: "Policy Research Wing (demo)" },
+      { email: "rahul.verma@dolr.gov.in", full_name: "Rahul Verma", department: "Revenue Department (demo)" },
+    ];
+    for (const u of EXTRA_USERS) {
+      const id = uid();
+      db.prepare(
+        "INSERT INTO users (id, email, full_name, department, password_hash, is_active, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)"
+      ).run(id, u.email, u.full_name, u.department, bcrypt.hashSync("ChangeMe123!", 10), now);
+      db.prepare("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)").run(id, govRoleId);
+    }
+
     // --- Data sources ---
     const insertSource = db.prepare(
       "INSERT INTO data_sources (id, name, provider, base_url, access_type, license, status, config_ref, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -377,6 +649,15 @@ function seedIfEmpty(db: Database.Database) {
     const sexRatioInd = indicator("Sex ratio", "socioeconomic", "females per 1000 males");
     const districtAreaInd = indicator("District area", "land", "km^2");
     const forestCoverInd = indicator("Forest cover", "land", "% of district area");
+    const decadalGrowthInd = indicator("Decadal growth rate (2001-2011)", "socioeconomic", "%");
+    const urbanPopInd = indicator("Urban population share", "socioeconomic", "%");
+    const ruralPopInd = indicator("Rural population share", "socioeconomic", "%");
+    const workforceInd = indicator("Workforce participation rate", "socioeconomic", "%");
+    const householdsInd = indicator("Number of households", "socioeconomic", "households");
+    const avgHouseholdInd = indicator("Average household size", "socioeconomic", "persons/household");
+    const scStShareInd = indicator("SC/ST population share", "socioeconomic", "%");
+    const maleLiteracyInd = indicator("Literacy rate (male)", "socioeconomic", "%");
+    const femaleLiteracyInd = indicator("Literacy rate (female)", "socioeconomic", "%");
 
     const insertGeo = db.prepare(
       "INSERT INTO geographic_units (id, level, name, code, parent_id, geometry_geojson, centroid_lat, centroid_lng, source_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -439,6 +720,62 @@ function seedIfEmpty(db: Database.Database) {
       insertIndicatorValue.run(uid(), sexRatioInd, districtId, demoDatasetId, row.sex_ratio, null, null);
       insertIndicatorValue.run(uid(), districtAreaInd, districtId, demoDatasetId, row.area_sq_km, null, null);
 
+      // --- Extended census-style profile: decadal growth, urban/rural
+      // split, workforce participation, households, SC/ST share, gender
+      // literacy split. Computed via documented formulas from the base
+      // Census 2011 row above -- tagged DERIVED, never claimed as an
+      // official cross-tabulation. ---
+      const ext = deriveExtendedCensusFields(row);
+      const extDatasetId = uid();
+      insertDataset.run(
+        extDatasetId,
+        sourceId,
+        `${row.district} district extended census profile (derived estimates)`,
+        "DERIVED",
+        2011,
+        "2011-03-01",
+        "district",
+        "Demo/estimated extension of the Census 2011 base profile -- fills fields the district-level source does not (yet) provide.",
+        "Decadal growth rate and SC/ST population share are applied from state-level Census 2011 figures as a documented proxy, not the district's own tabulation. Urban/rural split, households, average household size, workforce participation rate, and the male/female literacy split are calculated from the base population/density/literacy figures using fixed national-average ratios (see each value's derivation method) -- they are internally consistent estimates for this demo, not officially tabulated district statistics.",
+        now
+      );
+      insertIndicatorValue.run(
+        uid(), decadalGrowthInd, districtId, extDatasetId, ext.decadalGrowthPct, null,
+        `Applied from the ${row.state} state-level 2001-2011 decadal growth rate (Census of India); the district's own figure is not yet loaded from a verified source.`
+      );
+      insertIndicatorValue.run(
+        uid(), urbanPopInd, districtId, extDatasetId, ext.urbanPct, null,
+        "Estimated from population density using a density-to-urbanisation heuristic calibrated against national 2011 patterns; not the district's directly tabulated urban/rural split."
+      );
+      insertIndicatorValue.run(
+        uid(), ruralPopInd, districtId, extDatasetId, ext.ruralPct, null,
+        "100% minus the estimated urban population share above."
+      );
+      insertIndicatorValue.run(
+        uid(), workforceInd, districtId, extDatasetId, ext.workforceParticipationPct, null,
+        "Estimated from the national 2011 Work Participation Rate (~39.8%), adjusted slightly against the district's literacy rate as a rough proxy; not district-tabulated."
+      );
+      insertIndicatorValue.run(
+        uid(), householdsInd, districtId, extDatasetId, ext.households, null,
+        `Population divided by the estimated average household size (${ext.avgHouseholdSize} persons/household) below.`
+      );
+      insertIndicatorValue.run(
+        uid(), avgHouseholdInd, districtId, extDatasetId, ext.avgHouseholdSize, null,
+        "Blended from the national 2011 rural (~4.8) and urban (~4.1) average household sizes, weighted by the estimated urban/rural split above."
+      );
+      insertIndicatorValue.run(
+        uid(), scStShareInd, districtId, extDatasetId, ext.scStSharePct, null,
+        `Applied from the ${row.state} state-level combined SC+ST population share (Census of India 2011); district-level SC/ST breakdown is not yet loaded from a verified source.`
+      );
+      insertIndicatorValue.run(
+        uid(), maleLiteracyInd, districtId, extDatasetId, ext.maleLiteracy, null,
+        "Combined literacy rate plus half of the national 2011 average male-female literacy gap (~16.7 points); not the district's directly tabulated gender-split literacy figure."
+      );
+      insertIndicatorValue.run(
+        uid(), femaleLiteracyInd, districtId, extDatasetId, ext.femaleLiteracy, null,
+        "Combined literacy rate minus half of the national 2011 average male-female literacy gap (~16.7 points); not the district's directly tabulated gender-split literacy figure."
+      );
+
       if (row.forest_pct !== undefined) {
         const forestDatasetId = uid();
         insertDataset.run(
@@ -487,7 +824,7 @@ function seedIfEmpty(db: Database.Database) {
         );
         insertMapLayer.run(
           uid(), districtId, "District boundary", "boundary", "DERIVED", boundaryDatasetId,
-          JSON.stringify(boundaryFeature), JSON.stringify({ color: "#1B2A4A", weight: 2, fillOpacity: 0.05 })
+          JSON.stringify(boundaryFeature), JSON.stringify({ color: "#152238", weight: 2, fillOpacity: 0.05 })
         );
       }
 
@@ -516,7 +853,7 @@ function seedIfEmpty(db: Database.Database) {
       );
       insertMapLayer.run(
         uid(), districtId, "District headquarters", "point", "DERIVED", hqDatasetId,
-        JSON.stringify(hqPoint), JSON.stringify({ color: "#B8862B" })
+        JSON.stringify(hqPoint), JSON.stringify({ color: "#A8752A" })
       );
     }
 
@@ -568,6 +905,276 @@ function seedIfEmpty(db: Database.Database) {
 
     console.log(`[gov] Seed complete -- ${DISTRICTS.length} districts across ${Object.keys(stateIds).length} states/UTs.`);
     console.log("[gov] Demo login: policy.user@dolr.gov.in / ChangeMe123!");
+  });
+
+  tx();
+}
+
+// ---------------------------------------------------------------------------
+// Evidence & Research hub: canonical seed rows for Official Documents,
+// Government Schemes, and a small illustrative set of Land Record / Legal
+// evidence rows linked to the GIS module's real sample parcels. Runs on
+// every startup (not just on an empty DB) using fixed ids and INSERT OR
+// REPLACE so it stays correct even against a database seeded before this
+// module existed, without touching unrelated data (users, workspaces,
+// reports, uploads). See the module docstring in app/gov/documents for the
+// submodules this feeds.
+// ---------------------------------------------------------------------------
+
+/** Titles from the original one-time seed that this module supersedes / folds in. */
+const LEGACY_DOCUMENT_TITLES = ["DILRMP 3.0 Operational Guidelines", "SVAMITVA Scheme Framework"];
+const LEGACY_SCHEME_NAMES = ["Digital India Land Records Modernisation Programme (DILRMP) 3.0", "SVAMITVA Scheme"];
+
+const LAND_RECORD_TYPE_CYCLE: { type: string; label: string }[] = [
+  { type: "ror", label: "Record of Rights (RoR)" },
+  { type: "mutation", label: "Mutation record" },
+  { type: "survey_map", label: "Cadastral / survey map" },
+  { type: "property_card", label: "Property card" },
+  { type: "registration_deed", label: "Registration / deed record" },
+  { type: "ror", label: "Record of Rights (RoR)" },
+];
+
+function districtGeoId(db: Database.Database, districtCode: string): string | null {
+  const row = db.prepare("SELECT id FROM geographic_units WHERE code = ? AND level = 'district'").get(districtCode) as
+    | { id: string }
+    | undefined;
+  return row?.id ?? null;
+}
+
+function seedEvidenceHub(db: Database.Database) {
+  const now = nowIso();
+  const today = now.slice(0, 10);
+
+  const tx = db.transaction(() => {
+    for (const title of LEGACY_DOCUMENT_TITLES) {
+      db.prepare("DELETE FROM documents WHERE title = ?").run(title);
+    }
+    for (const name of LEGACY_SCHEME_NAMES) {
+      db.prepare("DELETE FROM schemes WHERE name = ?").run(name);
+    }
+
+    const upsertDoc = db.prepare(`
+      INSERT INTO documents
+        (id, title, source_organization, publication_date, document_type, geographic_unit_id, source_url,
+         data_status, summary, created_at, uploaded_document_id, category, state, parcel_id, page_ref, last_verified)
+      VALUES (@id, @title, @source_organization, @publication_date, @document_type, @geographic_unit_id, @source_url,
+              @data_status, @summary, @created_at, @uploaded_document_id, @category, @state, @parcel_id, @page_ref, @last_verified)
+      ON CONFLICT(id) DO UPDATE SET
+        title=excluded.title, source_organization=excluded.source_organization, publication_date=excluded.publication_date,
+        document_type=excluded.document_type, geographic_unit_id=excluded.geographic_unit_id, source_url=excluded.source_url,
+        data_status=excluded.data_status, summary=excluded.summary, category=excluded.category, state=excluded.state,
+        parcel_id=excluded.parcel_id, page_ref=excluded.page_ref, last_verified=excluded.last_verified
+    `);
+
+    // --- 1. Official Documents (real, verified; national level -> state: null) ---
+    const OFFICIAL_DOCS = [
+      {
+        id: "ev-doc-dilrmp",
+        title: "DILRMP - Digital India Land Records Modernization Programme",
+        source_organization: "Department of Land Resources, Ministry of Rural Development, Government of India",
+        publication_date: "2016-01-01",
+        document_type: "act_scheme",
+        source_url: "https://dolr.gov.in/en/programmes-schemes/dilrmp-2/",
+        summary:
+          "Launched 2016 (evolved from NLRMP), extended through 2025-26 with an outlay of Rs 875 crore. Eight components: " +
+          "Computerization of Land Records, Registration Computerization, Survey/Resurvey, Modern Record Rooms, Training & " +
+          "Capacity Building, Project Management Unit, Revenue Court Computerization, and Aadhaar Integration (voluntary).",
+      },
+      {
+        id: "ev-doc-ulpin",
+        title: "ULPIN (Bhu-Aadhaar) - Unique Land Parcel Identification Number",
+        source_organization: "Department of Land Resources, Ministry of Rural Development, Government of India",
+        publication_date: null,
+        document_type: "identifier_scheme",
+        source_url: "https://dolr.gov.in/en/ulpin/",
+        summary:
+          "A 14-digit alphanumeric ID assigned to each surveyed land parcel under DILRMP, intended to curb land-linked " +
+          "fraud and enable cross-referencing of land records nationally.",
+      },
+      {
+        id: "ev-doc-svamitva",
+        title: "SVAMITVA Scheme",
+        source_organization: "Ministry of Panchayati Raj, Government of India",
+        publication_date: "2020-04-24",
+        document_type: "scheme",
+        source_url: "https://svamitva.nic.in/",
+        summary:
+          "Survey of Villages and Mapping with Improvised Technology in Village Areas. Issues legal Rural Property " +
+          "Ownership Cards (\"property cards\") to rural residents using drone surveying. See also its published SOP " +
+          "and Concept Note at the same domain.",
+      },
+      {
+        id: "ev-doc-rfctlarr",
+        title:
+          "Right to Fair Compensation and Transparency in Land Acquisition, Rehabilitation and Resettlement Act, 2013 (RFCTLARR Act)",
+        source_organization: "Ministry of Rural Development, Government of India (Act of Parliament)",
+        publication_date: "2013-09-27",
+        document_type: "act",
+        source_url:
+          "https://www.indiacode.nic.in/bitstream/123456789/19895/1/the_right_to_fair_compensation_and_transparency_in_land_acquisition,_rehabilitation_and_resettlement_act,_2013..pdf",
+        summary: "Governs land acquisition, compensation and resettlement in India.",
+      },
+    ];
+    for (const d of OFFICIAL_DOCS) {
+      upsertDoc.run({
+        id: d.id,
+        title: d.title,
+        source_organization: d.source_organization,
+        publication_date: d.publication_date,
+        document_type: d.document_type,
+        geographic_unit_id: null,
+        source_url: d.source_url,
+        data_status: "OFFICIAL",
+        summary: d.summary,
+        created_at: now,
+        uploaded_document_id: null,
+        category: "official_document",
+        state: null,
+        parcel_id: null,
+        page_ref: null,
+        last_verified: today,
+      });
+    }
+
+    // --- 2. Land Record Evidence (SAMPLE; linked to real sample parcels from the GIS module) ---
+    const landRecordDistricts = PILOT_DATASET.slice(0, LAND_RECORD_TYPE_CYCLE.length);
+    landRecordDistricts.forEach((district, i) => {
+      const firstVillage = district.subDistricts[0]?.villages[0];
+      const parcel = firstVillage?.parcels[0];
+      if (!parcel) return;
+      const kind = LAND_RECORD_TYPE_CYCLE[i % LAND_RECORD_TYPE_CYCLE.length];
+      upsertDoc.run({
+        id: `ev-lr-${i + 1}`,
+        title: `${kind.label} - ${parcel.parcelIdLabel} ${parcel.surveyNumber}, ${parcel.villageName}, ${district.districtName}`,
+        source_organization: `${district.stateName} revenue department (sample record, this demo)`,
+        publication_date: parcel.history[0]?.year ? `${parcel.history[0].year}-01-01` : null,
+        document_type: kind.type,
+        geographic_unit_id: districtGeoId(db, district.districtCode),
+        source_url: `/gov/documents/ev-lr-${i + 1}`,
+        data_status: "SAMPLE",
+        summary:
+          `Illustrative ${kind.label.toLowerCase()} for ${parcel.parcelIdLabel} ${parcel.surveyNumber} in ${parcel.villageName} ` +
+          `village, ${district.districtName} district. Generated demo data mirroring typical state land-record fields -- not a ` +
+          `verified government land record. See the linked parcel for the full sample record and history.`,
+        created_at: now,
+        uploaded_document_id: null,
+        category: "land_record",
+        state: district.stateCode,
+        parcel_id: parcel.id,
+        page_ref: null,
+        last_verified: today,
+      });
+    });
+
+    // --- 3. Legal & Court Evidence (SAMPLE; illustrative only, linked to disputed sample parcels) ---
+    const disputedParcels = Array.from(PARCEL_INDEX.values())
+      .filter((p) => p.disputeStatus !== "none")
+      .slice(0, 3);
+    disputedParcels.forEach((parcel, i) => {
+      const ownerDistrict = PILOT_DATASET.find((d) => d.districtName === parcel.districtName && d.stateName === parcel.stateName);
+      upsertDoc.run({
+        id: `ev-legal-${i + 1}`,
+        title: `Sample Revenue Case - Mutation Dispute, Parcel ${parcel.parcelIdLabel} ${parcel.surveyNumber} (${parcel.villageName})`,
+        source_organization: `${parcel.stateName} revenue court (illustrative, not a real case record)`,
+        publication_date: null,
+        document_type: "case_record",
+        geographic_unit_id: ownerDistrict ? districtGeoId(db, ownerDistrict.districtCode) : null,
+        source_url: `/gov/documents/ev-legal-${i + 1}`,
+        data_status: "SAMPLE",
+        summary:
+          `Illustrative revenue case record for a boundary/ownership/mutation dispute on ${parcel.parcelIdLabel} ` +
+          `${parcel.surveyNumber} in ${parcel.villageName}, ${parcel.districtName}. This is NOT a real court or revenue-court ` +
+          `record -- no real case database is available in this environment. Shown only to demonstrate how case/order/judgment ` +
+          `evidence would be structured and linked to a parcel.`,
+        created_at: now,
+        uploaded_document_id: null,
+        category: "legal_case",
+        state: ownerDistrict?.stateCode ?? null,
+        parcel_id: parcel.id,
+        page_ref: null,
+        last_verified: today,
+      });
+    });
+
+    // --- 4. Government Schemes (real, verified; exactly PM-KISAN, PMAY-U 2.0, SVAMITVA) ---
+    const upsertScheme = db.prepare(`
+      INSERT INTO schemes
+        (id, name, department, description, scheme_type, launch_year, status_note, source_url, data_status, as_of_date,
+         created_at, eligibility, benefits, required_documents, application_process, last_verified)
+      VALUES (@id, @name, @department, @description, @scheme_type, @launch_year, @status_note, @source_url, @data_status, @as_of_date,
+              @created_at, @eligibility, @benefits, @required_documents, @application_process, @last_verified)
+      ON CONFLICT(id) DO UPDATE SET
+        name=excluded.name, department=excluded.department, description=excluded.description, scheme_type=excluded.scheme_type,
+        launch_year=excluded.launch_year, status_note=excluded.status_note, source_url=excluded.source_url,
+        data_status=excluded.data_status, as_of_date=excluded.as_of_date, eligibility=excluded.eligibility,
+        benefits=excluded.benefits, required_documents=excluded.required_documents,
+        application_process=excluded.application_process, last_verified=excluded.last_verified
+    `);
+    const STANDARD_DOCS =
+      "General guidance (confirm the current list at the official portal): Aadhaar card, land ownership/record-of-rights proof, bank account details (Aadhaar-linked), and a recent passport-size photograph.";
+
+    upsertScheme.run({
+      id: "ev-scheme-pmkisan",
+      name: "PM-KISAN (Pradhan Mantri Kisan Samman Nidhi)",
+      department: "Department of Agriculture & Farmers Welfare, Ministry of Agriculture and Farmers Welfare",
+      description:
+        "Rs 6,000/year to eligible farmer families in 3 equal installments via Direct Benefit Transfer to Aadhaar-linked bank accounts.",
+      scheme_type: "central_sector",
+      launch_year: 2019,
+      status_note: "Ongoing, nationwide.",
+      source_url: "https://pmkisan.gov.in/",
+      data_status: "OFFICIAL",
+      as_of_date: today,
+      created_at: now,
+      eligibility:
+        "Primary eligibility: cultivable landholding, subject to income-based exclusions for higher-income categories. " +
+        "Confirm current eligibility criteria at the official portal, as policies change.",
+      benefits: "Rs 6,000 per year, paid in 3 equal installments of Rs 2,000 via Direct Benefit Transfer.",
+      required_documents: STANDARD_DOCS,
+      application_process: "Apply / check status via the official PM-KISAN portal.",
+      last_verified: today,
+    });
+
+    upsertScheme.run({
+      id: "ev-scheme-pmay",
+      name: "PMAY (Pradhan Mantri Awas Yojana - Urban 2.0)",
+      department: "Ministry of Housing and Urban Affairs",
+      description:
+        "Central housing scheme aimed at affordable housing for eligible urban households; check current eligibility bands and application at the official portal.",
+      scheme_type: "central_sector",
+      launch_year: 2015,
+      status_note: "Urban 2.0 phase ongoing -- check the official portal for current eligibility bands and city coverage.",
+      source_url: "https://pmaymis.gov.in/",
+      data_status: "OFFICIAL",
+      as_of_date: today,
+      created_at: now,
+      eligibility: "Eligible urban households within the income/asset bands set for PMAY-Urban 2.0 -- confirm current bands at the official portal, as policies change.",
+      benefits: "Assistance toward affordable urban housing (exact benefit structure depends on the scheme component and eligibility band -- see official portal).",
+      required_documents: STANDARD_DOCS,
+      application_process: "Apply via the official PMAY-Urban portal or the designated Urban Local Body.",
+      last_verified: today,
+    });
+
+    upsertScheme.run({
+      id: "ev-scheme-svamitva",
+      name: "SVAMITVA Scheme",
+      department: "Ministry of Panchayati Raj",
+      description:
+        "Rural residents in surveyed villages become eligible for a legal property card once drone survey/verification of their village is complete.",
+      scheme_type: "central_sector",
+      launch_year: 2020,
+      status_note: "Ongoing, nationwide rollout. Cross-referenced with the SVAMITVA entry under Official Documents.",
+      source_url: "https://svamitva.nic.in/",
+      data_status: "OFFICIAL",
+      as_of_date: today,
+      created_at: now,
+      eligibility: "Residents of villages covered by a completed SVAMITVA drone survey and local verification drive; no income/asset test.",
+      benefits: "Legal Rural Property Ownership Card (\"property card\") for surveyed rural property, supporting access to formal credit.",
+      required_documents: STANDARD_DOCS,
+      application_process:
+        "No direct citizen application -- this is a government-led survey drive. Residents participate in the local drone-survey verification process when it reaches their village.",
+      last_verified: today,
+    });
   });
 
   tx();

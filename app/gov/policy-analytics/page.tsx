@@ -7,6 +7,7 @@ import { DashboardShell } from "@/components/gov/DashboardShell";
 import { DataStatusBadge } from "@/components/gov/DataStatusBadge";
 import { Skeleton } from "@/components/gov/Skeleton";
 import { RequireAuth } from "@/components/gov/RequireAuth";
+import { NationalLandUseTrends } from "@/components/gov/NationalLandUseTrends";
 
 interface Row {
   area: GeographicUnitOut;
@@ -83,8 +84,18 @@ function Inner() {
     <DashboardShell>
       <h2 className="mb-1 font-serif-display text-2xl font-semibold text-register-navy">Policy Analytics</h2>
       <p className="mb-6 max-w-2xl text-sm text-register-ink/60">
+        National land-use context, followed by a district-by-district comparison of this
+        platform's own indicators.
+      </p>
+
+      <NationalLandUseTrends />
+
+      <h3 className="mb-1 font-serif-display text-xl font-semibold text-register-navy">
+        District comparison
+      </h3>
+      <p className="mb-4 max-w-2xl text-sm text-register-ink/60">
         Compare the same real indicators across districts you choose. Values come directly from
-        each district's own dataset — nothing here is recalculated or estimated beyond what each
+        each district&apos;s own dataset — nothing here is recalculated or estimated beyond what each
         indicator card already shows.
       </p>
 
@@ -141,11 +152,30 @@ function Inner() {
               Choose at least one district above to compare.
             </p>
           ) : (
-            <div className="overflow-x-auto rounded-sm border border-register-line bg-register-panel shadow-card">
-              <table className="min-w-full divide-y divide-register-line text-sm">
+            <div
+              className="overflow-x-auto rounded-sm border border-register-line bg-register-panel shadow-card"
+              style={{ scrollbarWidth: "thin" }}
+            >
+              {/*
+                table-fixed + an explicit <colgroup> pins every column to a
+                fixed width shared by its header and body cells, so the
+                header row and the data rows can never drift out of sync
+                column-by-column (the previous table-layout:auto let each
+                column's width float independently per row, which is what
+                made the columns look "out of order" once more than a
+                couple of districts were selected). The indicator column is
+                sticky so it stays in view while scrolling to later columns.
+              */}
+              <table className="w-full table-fixed divide-y divide-register-line text-sm">
+                <colgroup>
+                  <col style={{ width: 180 }} />
+                  {visibleRows.map((r) => (
+                    <col key={r.area.id} style={{ width: 210 }} />
+                  ))}
+                </colgroup>
                 <thead>
                   <tr className="bg-register-bg/60 text-left text-xs uppercase tracking-wide text-register-ink/50">
-                    <th className="px-4 py-3 font-medium">Indicator</th>
+                    <th className="sticky left-0 z-10 bg-register-bg/95 px-4 py-3 font-medium">Indicator</th>
                     {visibleRows.map((r) => (
                       <th key={r.area.id} className="px-4 py-3 font-medium">
                         {r.area.name}
@@ -157,12 +187,14 @@ function Inner() {
                 <tbody className="divide-y divide-register-line">
                   {indicatorNames.map((name) => (
                     <tr key={name} className="transition-colors hover:bg-register-bg/40">
-                      <td className="px-4 py-3 font-medium text-register-ink/80">{name}</td>
+                      <td className="sticky left-0 z-10 bg-register-panel px-4 py-3 font-medium text-register-ink/80">
+                        {name}
+                      </td>
                       {visibleRows.map((r) => {
                         const ind = r.indicators.find((i) => i.indicator_name === name);
                         return (
-                          <td key={r.area.id} className="px-4 py-3">
-                            <div className="flex items-center gap-2">
+                          <td key={r.area.id} className="px-4 py-3 align-top">
+                            <div className="flex flex-wrap items-center gap-1.5">
                               <span className="text-register-navy">
                                 {formatValue(ind)}
                                 {ind?.unit ? <span className="ml-1 text-xs text-register-ink/50">{ind.unit}</span> : null}
@@ -176,6 +208,10 @@ function Inner() {
                   ))}
                 </tbody>
               </table>
+              <p className="border-t border-register-line px-4 py-2 text-[11px] text-register-ink/40">
+                Scroll horizontally to see all {visibleRows.length} selected district{visibleRows.length === 1 ? "" : "s"}
+                {visibleRows.length > 4 ? " — the Indicator column stays fixed." : "."}
+              </p>
             </div>
           )}
         </>

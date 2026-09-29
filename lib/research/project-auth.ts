@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDatabase, mapProject, mapMember } from '@/lib/research/db';
+import { getSession } from '@/lib/auth/central';
 
 export const DEMO_USER_EMAIL = 'dr.sharma@academic.edu';
 
@@ -15,6 +16,20 @@ export interface ProjectAccess {
 
 export async function getCurrentUser() {
   const db = getDatabase();
+
+  // Check the central login session first (set by /login - either a real
+  // signed-up researcher account or the "Continue as Researcher demo user"
+  // button). Fall back to the portal's own pre-existing demo user only when
+  // there is no matching row here, so the app still works exactly as before
+  // if the central session is absent (e.g. hitting this API directly).
+  const session = getSession();
+  if (session) {
+    const row = db
+      .prepare('SELECT id, name, email FROM users WHERE email = ?')
+      .get(session.email) as any;
+    if (row) return { id: row.id, name: row.name, email: row.email };
+  }
+
   const row = db
     .prepare('SELECT id, name, email FROM users WHERE email = ?')
     .get(DEMO_USER_EMAIL) as any;

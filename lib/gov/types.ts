@@ -44,6 +44,9 @@ export interface IndicatorValueOut {
   dataset: DatasetOut;
 }
 
+/** Which Evidence & Research submodule a documents row belongs to. */
+export type EvidenceCategory = "official_document" | "land_record" | "legal_case" | "uploaded_report";
+
 export interface DocumentOut {
   id: string;
   title: string;
@@ -53,6 +56,37 @@ export interface DocumentOut {
   source_url: string;
   data_status: DataStatus;
   summary: string | null;
+  uploaded_document_id?: string | null;
+  category: EvidenceCategory;
+  /** State code (e.g. "RJ"), null for a national-level document/record. */
+  state: string | null;
+  /** GIS module sample parcel id this evidence item is linked to, if any. */
+  parcel_id: string | null;
+  page_ref: string | null;
+  last_verified: string | null;
+}
+
+export interface DocumentDetailOut extends DocumentOut {
+  /** Full extracted text of the original upload, when this item came from the upload pipeline. */
+  extracted_text: string | null;
+  /** File metadata for the original upload, when viewable inline via /api/gov/documents/{id}/file. */
+  file: { filename: string; mime_type: string | null; file_size: number | null } | null;
+}
+
+export type UploadedDocumentStatus = "processing" | "pending_review" | "approved" | "rejected";
+
+export interface UploadedDocumentOut {
+  id: string;
+  geographic_unit_id: string | null;
+  filename: string;
+  mime_type: string | null;
+  file_size: number | null;
+  uploaded_by: string;
+  uploaded_at: string;
+  status: UploadedDocumentStatus;
+  extracted_text: string | null;
+  extraction_error: string | null;
+  report_id: string | null;
 }
 
 export interface MapLayerOut {
@@ -110,19 +144,132 @@ export interface WorkspaceItemOut {
   created_at: string;
 }
 
+export type WorkspaceVisibility = "Private" | "Team" | "Public";
+export type WorkspaceStatus = "active" | "completed" | "archived";
+export type WorkspaceMemberRole = "owner" | "researcher" | "gis_analyst" | "policy_analyst" | "reviewer" | "viewer";
+export type WorkspaceTaskStatus = "todo" | "in_progress" | "done";
+export type FindingConfidence = "low" | "medium" | "high";
+
+export interface WorkspaceMemberOut {
+  id: string;
+  user_id: string;
+  full_name: string | null;
+  email: string;
+  role: WorkspaceMemberRole;
+  added_at: string;
+}
+
+export interface WorkspaceTaskOut {
+  id: string;
+  title: string;
+  description: string | null;
+  status: WorkspaceTaskStatus;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  due_date: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkspaceDiscussionOut {
+  id: string;
+  parent_id: string | null;
+  author_id: string;
+  author_name: string;
+  body: string;
+  created_at: string;
+}
+
+export interface WorkspaceFindingOut {
+  id: string;
+  statement: string;
+  confidence: FindingConfidence;
+  evidence_document_id: string | null;
+  evidence_document_title: string | null;
+  created_by: string;
+  created_by_name: string;
+  created_at: string;
+}
+
+export interface WorkspacePolicyNoteOut {
+  id: string;
+  title: string;
+  content: string;
+  created_by: string;
+  created_by_name: string;
+  created_at: string;
+}
+
+export interface WorkspaceLinkedDocumentOut {
+  link_id: string;
+  document: DocumentOut;
+  added_by: string;
+  added_at: string;
+}
+
+export interface WorkspaceGisLinkOut {
+  id: string;
+  geographic_unit_id: string | null;
+  geographic_unit_name: string | null;
+  parcel_id: string | null;
+  parcel_label: string | null;
+  label: string | null;
+  note: string | null;
+  added_by: string;
+  added_at: string;
+}
+
+export interface WorkspaceActivityOut {
+  id: string;
+  actor_id: string;
+  actor_name: string;
+  action: string;
+  detail: string | null;
+  created_at: string;
+}
+
 export interface WorkspaceOut {
   id: string;
   name: string;
   description: string | null;
+  research_area: string | null;
+  research_type: string | null;
   geographic_unit_id: string | null;
+  geography_name: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  visibility: WorkspaceVisibility;
+  status: WorkspaceStatus;
   owner_id: string;
+  owner_name: string | null;
   created_at: string;
   updated_at: string;
   item_count: number;
+  member_count: number;
+  document_count: number;
+  dataset_count: number;
+  task_progress: { total: number; done: number };
 }
 
 export interface WorkspaceDetailOut extends WorkspaceOut {
   items: WorkspaceItemOut[];
+  members: WorkspaceMemberOut[];
+  tasks: WorkspaceTaskOut[];
+  discussions: WorkspaceDiscussionOut[];
+  findings: WorkspaceFindingOut[];
+  policy_notes: WorkspacePolicyNoteOut[];
+  linked_documents: WorkspaceLinkedDocumentOut[];
+  gis_links: WorkspaceGisLinkOut[];
+  activity: WorkspaceActivityOut[];
+  my_role: WorkspaceMemberRole;
+}
+
+export interface DirectoryUserOut {
+  id: string;
+  full_name: string | null;
+  email: string;
+  department: string | null;
 }
 
 export interface ReportSectionOut {
@@ -134,13 +281,17 @@ export interface ReportSectionOut {
   order_index: number;
 }
 
+export type ReportStatus = "draft" | "final" | "pending_review" | "approved" | "rejected";
+
 export interface ReportOut {
   id: string;
   title: string;
   geographic_unit_id: string | null;
   workspace_id: string | null;
   owner_id: string;
-  status: "draft" | "final";
+  status: ReportStatus;
+  source_document_id: string | null;
+  rejection_reason: string | null;
   created_at: string;
   updated_at: string;
   section_count: number;
@@ -161,6 +312,11 @@ export interface SchemeOut {
   source_url: string;
   data_status: DataStatus;
   as_of_date: string | null;
+  eligibility: string | null;
+  benefits: string | null;
+  required_documents: string | null;
+  application_process: string | null;
+  last_verified: string | null;
 }
 
 export interface NotificationOut {

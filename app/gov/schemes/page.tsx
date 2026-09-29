@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/gov/client";
 import type { SchemeOut } from "@/lib/gov/types";
 import { DashboardShell } from "@/components/gov/DashboardShell";
-import { DataStatusBadge } from "@/components/gov/DataStatusBadge";
 import { Skeleton } from "@/components/gov/Skeleton";
 import { RequireAuth } from "@/components/gov/RequireAuth";
+import { SchemeCard } from "@/components/gov/schemes/SchemeCard";
 
 function Inner() {
   const [schemes, setSchemes] = useState<SchemeOut[]>([]);
@@ -36,34 +36,7 @@ function Inner() {
       ) : (
         <div className="space-y-4">
           {schemes.map((s) => (
-            <article key={s.id} className="rounded-sm border border-register-line bg-register-panel p-5 shadow-card">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-serif-display text-lg font-semibold text-register-navy">{s.name}</h3>
-                  <p className="text-xs text-register-ink/50">
-                    {s.department}
-                    {s.launch_year ? ` · Launched ${s.launch_year}` : ""}
-                    {s.scheme_type ? ` · ${s.scheme_type}` : ""}
-                  </p>
-                </div>
-                <DataStatusBadge status={s.data_status} />
-              </div>
-              <p className="mt-3 text-sm text-register-ink/80">{s.description}</p>
-              {s.status_note && (
-                <p className="mt-2 rounded-sm border border-dashed border-register-line bg-register-bg/60 px-3 py-2 text-xs text-register-ink/70">
-                  {s.status_note}
-                  {s.as_of_date ? <span className="ml-1 text-register-ink/40">(as of {s.as_of_date})</span> : null}
-                </p>
-              )}
-              <a
-                href={s.source_url}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-3 inline-block text-xs font-medium text-register-navy underline"
-              >
-                Official source ↗
-              </a>
-            </article>
+            <SchemeCard key={s.id} s={s} />
           ))}
         </div>
       )}
