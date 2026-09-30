@@ -7,6 +7,7 @@ const TABS = [
   { href: "/gov", key: "gov", label: "Government / Policy" },
   { href: "/research", key: "research", label: "Researcher / Academic" },
   { href: "/public", key: "public", label: "Public / Citizen" },
+  { href: "/admin", key: "admin", label: "Admin" },
 ] as const;
 
 /**
@@ -15,7 +16,7 @@ const TABS = [
  * ordinary client-side <Link> navigation (no full page reload needed
  * between portals) and figures out the active tab from the URL itself.
  */
-export function GlobalNav({ active: activeOverride }: { active?: "gov" | "research" | "public" }) {
+export function GlobalNav({ active: activeOverride }: { active?: "gov" | "research" | "public" | "admin" }) {
   const pathname = usePathname() ?? "/";
   const active =
     activeOverride ??
@@ -23,7 +24,9 @@ export function GlobalNav({ active: activeOverride }: { active?: "gov" | "resear
       ? "research"
       : pathname.startsWith("/public")
         ? "public"
-        : "gov");
+        : pathname.startsWith("/admin")
+          ? "admin"
+          : "gov");
   return (
     <div className="w-full bg-slate-900 text-white">
       <div className="mx-auto flex max-w-6xl items-center gap-1 overflow-x-auto px-4 py-2 text-sm">

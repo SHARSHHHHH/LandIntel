@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
+import { ADMIN_ROLE, ADMIN_PERMISSIONS } from "@/lib/admin/permissions";
 
 export const DATA_DIR = path.join(process.cwd(), "data");
 
@@ -247,7 +248,71 @@ export function getDatabase(): Database.Database {
   db.exec(SCHEMA);
   _db = db;
   seedIfEmpty(db);
+  ensureAdminRbac(db);
   return db;
+}
+
+function ensureAdminRbac(db: Database.Database) {
+  const tx = db.transaction(() => {
+    const permIds: Record<string, string> = {};
+    const findPerm = db.prepare("SELECT id FROM permissions WHERE code = ?");
+    const insertPerm = db.prepare("INSERT INTO permissions (id, code) VALUES (?, ?)");
+    for (const code of ADMIN_PERMISSIONS) {
+      const row = findPerm.get(code) as { id: string } | undefined;
+      if (row) {
+        permIds[code] = row.id;
+      } else {
+        const id = uid();
+        insertPerm.run(id, code);
+        permIds[code] = id;
+      }
+    }
+
+    const findRole = db.prepare("SELECT id FROM roles WHERE name = ?");
+    let roleRow = findRole.get(ADMIN_ROLE) as { id: string } | undefined;
+    if (!roleRow) {
+      const id = uid();
+      db.prepare("INSERT INTO roles (id, name) VALUES (?, ?)").run(id, ADMIN_ROLE);
+      roleRow = { id };
+    }
+
+    const findLink = db.prepare(
+      "SELECT 1 FROM role_permissions WHERE role_id = ? AND permission_id = ?"
+    );
+    const insertLink = db.prepare(
+      "INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)"
+    );
+    for (const code of ADMIN_PERMISSIONS) {
+      if (!findLink.get(roleRow.id, permIds[code])) insertLink.run(roleRow.id, permIds[code]);
+    }
+
+    const bootstrapEmail = (process.env.ADMIN_BOOTSTRAP_EMAIL || "").trim();
+    if (bootstrapEmail) {
+      const user = db
+        .prepare("SELECT id, email FROM users WHERE LOWER(email) = LOWER(?)")
+        .get(bootstrapEmail) as { id: string; email: string } | undefined;
+      if (user) {
+        const hasRole = db
+          .prepare("SELECT 1 FROM user_roles WHERE user_id = ? AND role_id = ?")
+          .get(user.id, roleRow.id);
+        if (!hasRole) {
+          db.prepare("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)").run(
+            user.id,
+            roleRow.id
+          );
+          db.prepare(
+            "INSERT INTO audit_logs (id, user_id, action, resource, resource_id, extra, created_at) VALUES (?, NULL, 'bootstrap_admin_role', 'user', ?, ?, ?)"
+          ).run(
+            uid(),
+            user.id,
+            JSON.stringify({ email: user.email, role: ADMIN_ROLE, via: "ADMIN_BOOTSTRAP_EMAIL" }),
+            nowIso()
+          );
+        }
+      }
+    }
+  });
+  tx();
 }
 
 // ---------------------------------------------------------------------------
